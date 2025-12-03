@@ -1,50 +1,81 @@
 import axios from "axios";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useReducer, useState } from "react";
 
 const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL;
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const baseUrl = import.meta.env.VITE_API_BASE_URL; 
 
-  // Load saved user
+  const initialState = {
+  user: null,
+  loading: true,
+  error: null,
+};
+
+function userReducer(state, action) {
+  switch (action.type) {
+    case "LOAD_USER":
+      return { ...state, user: action.payload, loading: false, error: null };
+    case "LOGIN_SUCCESS":
+      return { ...state, user: action.payload, loading: false, error: null };
+    case "LOGIN_FAIL":
+      return { ...state, user: null, loading: false, error: action.payload };
+    case "LOGOUT":
+      return { ...state, user: null, loading: false, error: null };
+    case "SET_LOADING":
+      return { ...state, loading: true };
+    default:
+      return state;
+  }
+}
+  const [state, dispatch] = useReducer(userReducer, initialState);
+
+  // Load user from localStorage on mount
   useEffect(() => {
     const savedUser = localStorage.getItem("food-user");
-
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      dispatch({ type: "LOAD_USER", payload: JSON.parse(savedUser) });
+    } else {
+      dispatch({ type: "SET_LOADING" });
+      dispatch({ type: "LOAD_USER", payload: null });
     }
-    setLoading(false);
   }, []);
 
   // Login
-  async function login(email, password) {
-  try {
-    const res = await axios.post(`${baseUrl}/user/login`, { email, password });
+  const login = async (email, password) => {
+    dispatch({ type: "SET_LOADING" });
+    try {
+      const res = await axios.post(`${baseUrl}/user/login`, { email, password });
 
-    if (res.data.success === "yes") {
-      const returnedUser = res.data.user;
-      setUser(returnedUser);
-      localStorage.setItem("food-user", JSON.stringify(returnedUser));
-      return { success: true, data: returnedUser };
-    } else {
-      // Login failed
-      return { success: false, error: res.data.message || "Invalid credentials" };
+      if (res.data.success === "yes") {
+        const returnedUser = res.data.user;
+        localStorage.setItem("food-user", JSON.stringify(returnedUser));
+        dispatch({ type: "LOGIN_SUCCESS", payload: returnedUser });
+        return { success: true, data: returnedUser };
+      } else {
+        dispatch({ type: "LOGIN_FAIL", payload: res.data.message || "Invalid credentials" });
+        return { success: false, error: res.data.message || "Invalid credentials" };
+      }
+    } catch (err) {
+      dispatch({ type: "LOGIN_FAIL", payload: "Login failed" });
+      return { success: false, error: "Login failed" };
     }
-  } catch (err) {
-    console.error(err);
-    return { success: false, error: "Login failed" };
-  }
-}
+  };
 
-  function logout() {
+   const logout = () => {
     localStorage.removeItem("food-user");
-    setUser(null);
-  }
-
-  return (
-    <UserContext.Provider value={{ user, loading, login, logout }}>
+    dispatch({ type: "LOGOUT" });
+  };
+ return (
+    <UserContext.Provider
+      value={{
+        user: state.user,
+        loading: state.loading,
+        error: state.error,
+        login,
+        logout,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );
